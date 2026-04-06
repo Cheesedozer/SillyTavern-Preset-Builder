@@ -35,6 +35,59 @@ const SYSTEM_IDENTIFIERS = new Set([
 ]);
 
 /**
+ * Wrapper for generateRaw that temporarily overrides generation parameters
+ * to prevent truncation and ensure consistent output quality.
+ *
+ * Overrides:
+ * - max_tokens: 45000 (enough headroom for any preset)
+ * - temperature: 1 (neutral sampling)
+ * - top_p: 1 (disabled, full distribution)
+ * - top_k: 0 (disabled, no truncation)
+ *
+ * @param {Function} generateRaw - The generateRaw function from SillyTavern context
+ * @param {object} params - Parameters to pass to generateRaw
+ * @returns {Promise<string>} The generated text
+ */
+async function generateWithOverrides(generateRaw, params) {
+    // Get the context to access settings
+    const context = SillyTavern.getContext();
+
+    // Try to access oai_settings from window scope (where SillyTavern stores it)
+    const oai_settings = window.oai_settings;
+
+    if (!oai_settings) {
+        // If oai_settings is not available, just call generateRaw normally
+        console.warn('[PresetBuilder] Could not access oai_settings, using default parameters');
+        return await generateRaw(params);
+    }
+
+    // Store original values
+    const original = {
+        maxTokens: oai_settings.openai_max_tokens,
+        temp: oai_settings.temp_openai,
+        topP: oai_settings.top_p_openai,
+        topK: oai_settings.top_k_openai,
+    };
+
+    try {
+        // Override with optimal values for structured generation
+        oai_settings.openai_max_tokens = 45000;
+        oai_settings.temp_openai = 1;
+        oai_settings.top_p_openai = 1;
+        oai_settings.top_k_openai = 0;
+
+        // Call generateRaw with overridden settings
+        return await generateRaw(params);
+    } finally {
+        // Always restore original values, even if generateRaw throws
+        oai_settings.openai_max_tokens = original.maxTokens;
+        oai_settings.temp_openai = original.temp;
+        oai_settings.top_p_openai = original.topP;
+        oai_settings.top_k_openai = original.topK;
+    }
+}
+
+/**
  * Initialize event listeners for the Describe tab.
  */
 export function initDescribeTab() {
@@ -129,7 +182,7 @@ async function generatePreset(description) {
         // PASS 1: Generate structural plan
         updateProgress('Generating preset blueprint...');
         const pass1Prompt = buildPass1PlanPrompt(description);
-        const pass1Result = await generateRaw({
+        const pass1Result = await generateWithOverrides(generateRaw, {
             prompt: pass1Prompt,
             systemPrompt: '',
         });
@@ -158,7 +211,7 @@ async function generatePreset(description) {
         } else {
             updateProgress('Writing prompt content...');
             const pass2Prompt = buildPass2ContentPrompt(plan, description);
-            const pass2Result = await generateRaw({
+            const pass2Result = await generateWithOverrides(generateRaw, {
                 prompt: pass2Prompt,
                 systemPrompt: '',
             });
@@ -189,7 +242,7 @@ async function generatePreset(description) {
             updateProgress('Running quality check...');
             const focusedJson = JSON.stringify(focusedOutput);
             const auditPrompt = buildAuditPrompt(focusedJson, description);
-            const auditResult = await generateRaw({
+            const auditResult = await generateWithOverrides(generateRaw, {
                 prompt: auditPrompt,
                 systemPrompt: '',
             });
@@ -257,7 +310,7 @@ Return JSON:
 Use SillyTavern macros: {{char}}, {{user}}, {{lastUserMessage}}, {{personality}}, {{scenario}}, {{description}}, {{persona}}.
 Return ONLY the JSON object.`;
 
-    const coreResult = await generateRaw({
+    const coreResult = await generateWithOverrides(generateRaw, {
         prompt: corePrompt,
         systemPrompt: '',
     });
@@ -274,7 +327,7 @@ Return ONLY the JSON object.`;
         updateProgress(`Writing content batch ${i + 1}/${totalBatches}...`);
 
         const batchPrompt = buildPass2BatchPrompt(plan, batch, description, i + 1, totalBatches);
-        const batchResult = await generateRaw({
+        const batchResult = await generateWithOverrides(generateRaw, {
             prompt: batchPrompt,
             systemPrompt: '',
         });
@@ -723,7 +776,7 @@ async function explainPreset() {
     try {
         const { generateRaw } = SillyTavern.getContext();
         const prompt = buildExplanationPrompt(JSON.stringify(preset, null, 2));
-        const result = await generateRaw({
+        const result = await generateWithOverrides(generateRaw, {
             prompt,
             systemPrompt: '',
         });
