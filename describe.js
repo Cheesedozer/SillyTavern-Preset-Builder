@@ -894,6 +894,9 @@ function assembleDraftFromUI() {
         });
     });
 
+    console.log('[PresetBuilder] assembleDraftFromUI found', prompts.length, 'prompts from', $('#pb-prompt-list .pb-prompt-card').length, 'cards');
+    console.log('[PresetBuilder] Prompt names:', prompts.map(p => p.name));
+
     preset.prompts = prompts;
 
     // Rebuild prompt_order, preserving system markers from the original
