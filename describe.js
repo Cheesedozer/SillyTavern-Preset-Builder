@@ -8,7 +8,14 @@
  * 3. The full preset is displayed in the editable draft UI
  */
 
-import { buildGenerationPrompt, buildAuditPrompt, buildExplanationPrompt } from './prompts.js';
+import {
+    buildGenerationPrompt,
+    buildAuditPrompt,
+    buildExplanationPrompt,
+    buildPass1PlanPrompt,
+    buildPass2ContentPrompt,
+    buildPass2BatchPrompt
+} from './prompts.js';
 import { getBasePresetTemplate } from './preset-template.js';
 import { getSettings, saveSettings } from './index.js';
 
@@ -94,7 +101,9 @@ export function initDescribeTab() {
 }
 
 /**
- * Main generation flow: get focused output from Claude, then assemble full preset.
+ * Main generation flow: Two-pass generation to avoid truncation.
+ * Pass 1: Generate structural plan
+ * Pass 2: Generate full content based on plan
  * @param {string} description
  */
 async function generatePreset(description) {
@@ -117,24 +126,68 @@ async function generatePreset(description) {
     try {
         const { generateRaw } = SillyTavern.getContext();
 
-        // Step 1: Generate focused content (prompts + parameters only)
-        updateProgress('Generating prompt entries and parameters...');
-        const generationPrompt = buildGenerationPrompt(description);
-        const rawResult = await generateRaw({
-            prompt: generationPrompt,
+        // PASS 1: Generate structural plan
+        updateProgress('Generating preset blueprint...');
+        const pass1Prompt = buildPass1PlanPrompt(description);
+        const pass1Result = await generateRaw({
+            prompt: pass1Prompt,
             systemPrompt: '',
         });
 
-        if (!rawResult) {
+        if (!pass1Result) {
             throw new Error('Generation returned empty result. Make sure you have an LLM API configured.');
         }
 
-        let focusedJson = extractJson(rawResult);
-        let focusedOutput = parseJsonSafe(focusedJson);
+        const planJson = extractJson(pass1Result);
+        const plan = parseJsonSafe(planJson);
 
-        // Step 2: Self-audit on the focused output (if enabled)
+        // Validate plan structure
+        if (!plan.prompt_plan || !Array.isArray(plan.prompt_plan)) {
+            throw new Error('Invalid plan structure: missing prompt_plan array');
+        }
+
+        const promptCount = plan.prompt_plan.length;
+        updateProgress(`Blueprint ready: ${promptCount} prompts planned. Generating content...`);
+
+        // PASS 2: Generate full content
+        let focusedOutput;
+
+        // Determine if we need batching (if plan has > 25 prompts, use batching to be safe)
+        if (promptCount > 25) {
+            focusedOutput = await generateContentInBatches(plan, description, generateRaw);
+        } else {
+            updateProgress('Writing prompt content...');
+            const pass2Prompt = buildPass2ContentPrompt(plan, description);
+            const pass2Result = await generateRaw({
+                prompt: pass2Prompt,
+                systemPrompt: '',
+            });
+
+            if (!pass2Result) {
+                throw new Error('Content generation returned empty result.');
+            }
+
+            const contentJson = extractJson(pass2Result);
+            const content = parseJsonSafe(contentJson);
+
+            // Merge content with plan to create focused output
+            focusedOutput = {
+                parameters: plan.parameters,
+                main_prompt: content.main_prompt || '',
+                nsfw_prompt: content.nsfw_prompt || '',
+                jailbreak_prompt: content.jailbreak_prompt || '',
+                prompts: content.prompts || [],
+                prompt_order: plan.prompt_order_plan.map(name => ({
+                    identifier: name,
+                    enabled: true
+                }))
+            };
+        }
+
+        // Step 3: Self-audit on the focused output (if enabled)
         if (settings.selfAuditEnabled) {
             updateProgress('Running quality check...');
+            const focusedJson = JSON.stringify(focusedOutput);
             const auditPrompt = buildAuditPrompt(focusedJson, description);
             const auditResult = await generateRaw({
                 prompt: auditPrompt,
@@ -146,18 +199,17 @@ async function generatePreset(description) {
                     const auditJson = extractJson(auditResult);
                     const audited = parseJsonSafe(auditJson);
                     focusedOutput = audited;
-                    focusedJson = auditJson;
                 } catch {
                     console.warn('[PresetBuilder] Audit response was not valid JSON, using original.');
                 }
             }
         }
 
-        // Step 3: Assemble full preset from focused output + boilerplate
-        updateProgress('Building preset structure...');
+        // Step 4: Assemble full preset from focused output + boilerplate
+        updateProgress('Assembling preset...');
         const fullPreset = assemblePreset(focusedOutput);
 
-        // Step 4: Display draft
+        // Step 5: Display draft
         currentDraft = fullPreset;
         renderDraftPreview(fullPreset);
         $('#pb-draft-preview').slideDown(300);
@@ -169,6 +221,92 @@ async function generatePreset(description) {
         isGenerating = false;
         $('#pb-progress').hide();
     }
+}
+
+/**
+ * Generate content in batches to avoid truncation for very large presets.
+ * @param {object} plan - The plan from Pass 1
+ * @param {string} description - Original user description
+ * @param {Function} generateRaw - The generateRaw function from SillyTavern
+ * @returns {object} The focused output with all content generated
+ */
+async function generateContentInBatches(plan, description, generateRaw) {
+    const BATCH_SIZE = 10;
+    const promptPlan = plan.prompt_plan;
+    const totalBatches = Math.ceil(promptPlan.length / BATCH_SIZE);
+    const allPrompts = [];
+
+    // Generate main, nsfw, and jailbreak prompts first (single call)
+    updateProgress('Writing core prompts...');
+    const corePrompt = `You are a SillyTavern preset content writer. Generate the core prompts based on this plan:
+
+USER DESCRIPTION: ${description}
+
+PLAN SUMMARIES:
+- main_prompt_summary: ${plan.main_prompt_summary}
+- nsfw_prompt_summary: ${plan.nsfw_prompt_summary}
+- jailbreak_prompt_summary: ${plan.jailbreak_prompt_summary}
+
+Return JSON:
+{
+  "main_prompt": "<full content>",
+  "nsfw_prompt": "<full content or empty string>",
+  "jailbreak_prompt": "<full content>"
+}
+
+Use SillyTavern macros: {{char}}, {{user}}, {{lastUserMessage}}, {{personality}}, {{scenario}}, {{description}}, {{persona}}.
+Return ONLY the JSON object.`;
+
+    const coreResult = await generateRaw({
+        prompt: corePrompt,
+        systemPrompt: '',
+    });
+
+    const coreJson = extractJson(coreResult);
+    const coreContent = parseJsonSafe(coreJson);
+
+    // Generate custom prompts in batches
+    for (let i = 0; i < totalBatches; i++) {
+        const start = i * BATCH_SIZE;
+        const end = Math.min(start + BATCH_SIZE, promptPlan.length);
+        const batch = promptPlan.slice(start, end);
+
+        updateProgress(`Writing content batch ${i + 1}/${totalBatches}...`);
+
+        const batchPrompt = buildPass2BatchPrompt(plan, batch, description, i + 1, totalBatches);
+        const batchResult = await generateRaw({
+            prompt: batchPrompt,
+            systemPrompt: '',
+        });
+
+        if (!batchResult) {
+            console.warn(`[PresetBuilder] Batch ${i + 1} returned empty, skipping`);
+            continue;
+        }
+
+        const batchJson = extractJson(batchResult);
+        const batchContent = parseJsonSafe(batchJson);
+
+        // batchContent should be an array of prompt objects
+        if (Array.isArray(batchContent)) {
+            allPrompts.push(...batchContent);
+        } else {
+            console.warn(`[PresetBuilder] Batch ${i + 1} did not return an array, skipping`);
+        }
+    }
+
+    // Assemble the focused output
+    return {
+        parameters: plan.parameters,
+        main_prompt: coreContent.main_prompt || '',
+        nsfw_prompt: coreContent.nsfw_prompt || '',
+        jailbreak_prompt: coreContent.jailbreak_prompt || '',
+        prompts: allPrompts,
+        prompt_order: plan.prompt_order_plan.map(name => ({
+            identifier: name,
+            enabled: true
+        }))
+    };
 }
 
 /**
@@ -200,46 +338,67 @@ function parseJsonSafe(jsonStr) {
 
 /**
  * Attempt to repair truncated JSON by closing open structures.
- * Uses simple brace/bracket counting — not a full parser.
+ * Improved version with better string handling and structure tracking.
  * @param {string} json
  * @returns {object|null}
  */
 function tryRepairJson(json) {
-    let repaired = json;
+    let truncated = json.trimEnd();
 
-    // Close any open string (find last unescaped quote parity)
-    const quoteCount = (repaired.match(/(?<!\\)"/g) || []).length;
-    if (quoteCount % 2 !== 0) {
-        repaired += '"';
-    }
-
-    // Count open braces and brackets
-    let braces = 0;
-    let brackets = 0;
+    // Track state while scanning
     let inString = false;
-    for (let i = 0; i < repaired.length; i++) {
-        const ch = repaired[i];
-        if (ch === '"' && (i === 0 || repaired[i - 1] !== '\\')) {
+    let escaped = false;
+    let braceCount = 0;
+    let bracketCount = 0;
+
+    for (let i = 0; i < truncated.length; i++) {
+        const char = truncated[i];
+
+        if (escaped) {
+            escaped = false;
+            continue;
+        }
+
+        if (char === '\\') {
+            escaped = true;
+            continue;
+        }
+
+        if (char === '"') {
             inString = !inString;
             continue;
         }
+
         if (inString) continue;
-        if (ch === '{') braces++;
-        else if (ch === '}') braces--;
-        else if (ch === '[') brackets++;
-        else if (ch === ']') brackets--;
+
+        if (char === '{') braceCount++;
+        if (char === '}') braceCount--;
+        if (char === '[') bracketCount++;
+        if (char === ']') bracketCount--;
     }
 
-    // Remove trailing comma before closing
-    repaired = repaired.replace(/,\s*$/, '');
+    // If we were inside a string, close it
+    if (inString) {
+        truncated += '"';
+    }
 
-    // Close open structures
-    while (brackets > 0) { repaired += ']'; brackets--; }
-    while (braces > 0) { repaired += '}'; braces--; }
+    // Remove trailing comma if present (before closing structures)
+    truncated = truncated.replace(/,\s*$/, '');
+
+    // Close any open brackets and braces
+    while (bracketCount > 0) {
+        truncated += ']';
+        bracketCount--;
+    }
+    while (braceCount > 0) {
+        truncated += '}';
+        braceCount--;
+    }
 
     try {
-        return JSON.parse(repaired);
-    } catch {
+        return JSON.parse(truncated);
+    } catch (e) {
+        console.warn('[PresetBuilder] Truncation repair failed:', e.message);
         return null;
     }
 }

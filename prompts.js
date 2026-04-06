@@ -362,6 +362,312 @@ Generate the preset now. Return ONLY the JSON object.`;
 }
 
 /**
+ * Builds the Pass 1 prompt for two-pass generation (structural plan only).
+ * @param {string} userDescription - The user's natural language description.
+ * @returns {string} The Pass 1 system prompt.
+ */
+export function buildPass1PlanPrompt(userDescription) {
+    return `You are a SillyTavern Chat Completion preset architect. Your task is to create a STRUCTURAL PLAN for a modular, well-structured preset based on the user's description.
+
+## OUTPUT FORMAT
+Return ONLY valid JSON matching the exact schema below. No markdown fences, no commentary, no explanation — ONLY the JSON object.
+
+## JSON SCHEMA — Return this exact shape:
+{
+  "parameters": {
+    "temperature": <number>,
+    "top_p": <number>,
+    "top_k": <number>,
+    "min_p": <number>,
+    "frequency_penalty": <number>,
+    "presence_penalty": <number>,
+    "openai_max_context": <number>,
+    "openai_max_tokens": <number>
+  },
+  "main_prompt_summary": "<brief description of what the main prompt should contain>",
+  "nsfw_prompt_summary": "<brief description of NSFW prompt content, or empty string if not applicable>",
+  "jailbreak_prompt_summary": "<brief description of PHI/jailbreak content>",
+  "prompt_plan": [
+    {
+      "name": "<descriptive name with emoji/category prefix if helpful>",
+      "category": "<foundation|character_narrative|writing_style|guidelines|cot|output_control|anti_pattern|nsfw|format_example>",
+      "role": "system",
+      "injection_position": 0,
+      "injection_depth": 4,
+      "injection_order": 100,
+      "enabled": true,
+      "purpose": "<1-2 sentence description of what this prompt does and what content it should contain>",
+      "estimated_words": <number>,
+      "position_in_order": "<where this appears relative to system markers, e.g., 'after chatHistory' or 'before charDescription'>"
+    }
+  ],
+  "prompt_order_plan": [
+    "main",
+    "nsfw",
+    "<Custom Prompt Name>",
+    "charDescription",
+    "charPersonality",
+    "scenario",
+    "personaDescription",
+    "worldInfoBefore",
+    "enhanceDefinitions",
+    "dialogueExamples",
+    "chatHistory",
+    "worldInfoAfter",
+    "jailbreak"
+  ]
+}
+
+## PLANNING RULES
+
+### Generate 15-40 prompt entries
+Based on the user's description complexity, plan for 15-40 prompt entries organized into functional categories.
+
+### Each prompt_plan entry must include:
+- **name**: Clear, descriptive name (can include emoji/category prefix for organization)
+- **category**: One of: foundation, character_narrative, writing_style, guidelines, cot, output_control, anti_pattern, nsfw, format_example
+- **role**: Usually "system", but "assistant" for CoT prefills
+- **injection_position**: 0 for depth-based injection
+- **injection_depth**: 0-4 (higher = closer to recent messages = stronger recency influence)
+- **injection_order**: 100 for most prompts, adjust if specific ordering needed
+- **enabled**: true for prompts that should be active by default
+- **purpose**: 1-2 sentences explaining what this prompt does and what content it should contain
+- **estimated_words**: How many words the full content should be (be realistic)
+- **position_in_order**: Where this appears in the prompt stack
+
+### prompt_order_plan must include:
+- ALL system identifiers: main, nsfw, charDescription, charPersonality, scenario, personaDescription, worldInfoBefore, enhanceDefinitions, dialogueExamples, chatHistory, worldInfoAfter, jailbreak
+- ALL custom prompt names from prompt_plan (use exact name match)
+- Ordered correctly (foundation before chatHistory, enforcement after chatHistory)
+
+### Mandatory Categories (same as single-pass generation)
+
+**CATEGORY 1: Foundation Prompts**
+- Main prompt summary: Role assignment, identity isolation, core narrative rules (100-300 words)
+
+**CATEGORY 2: Character & Narrative Framework**
+- Plan 2-4 prompts: Character interaction rules, POV/perspective, character autonomy, narrative pacing
+- Position BEFORE chatHistory
+
+**CATEGORY 3: Writing Style**
+- Plan 2-3 prompts:
+  * Writing Style (200-500 words): Substantial style guidance with specific techniques
+  * Anti-Cliché/Banned Patterns (50-150 words): Concrete examples of phrases/patterns to avoid
+- Position AFTER chatHistory for recency influence
+
+**CATEGORY 4: Guidelines (User-Editable)**
+- Plan 1 prompt: Clearly-labeled user-editable guidelines (100-200 words)
+- Position AFTER chatHistory
+
+**CATEGORY 5: Chain of Thought (if requested)**
+- Only if user explicitly requests CoT/thinking/reasoning
+- Plan 2-3 prompts:
+  * CoT System Prompt (200-400 words): Structured thinking steps with word budgets
+  * CoT Prefill (10-30 words, role: "assistant"): Primes thinking flow
+  * CoT Language (20-50 words, if foreign-language thinking requested)
+- Position AFTER chatHistory (injection_depth: 4)
+
+**CATEGORY 6: Output Control**
+- Plan 1-2 prompts: Word count/length control, response structure
+- Position AFTER chatHistory
+
+**CATEGORY 7: Anti-Pattern Prompts**
+- Plan 2-4 prompts: Each prevents one specific problem (anti-omniscience, anti-repetition, anti-summarization, anti-rushing, anti-purple-prose, anti-talking-heads)
+- Each 30-80 words
+- Position AFTER chatHistory
+
+**CATEGORY 8: NSFW/Adult Content (if applicable)**
+- Only if user's description indicates adult/NSFW content
+- Plan 1-3 prompts: NSFW guidelines, vocabulary, pacing
+
+**CATEGORY 9: Format Examples (if needed)**
+- Only if user requests specific output formatting
+- Plan 1-2 prompts showing desired format
+
+### Positioning Strategy
+- Foundation, character setup, narrative rules → BEFORE chatHistory (or injection_depth: 0)
+- Behavioral enforcement, style rules, output control → AFTER chatHistory (injection_depth: 1-4)
+- Higher injection_depth = closer to recent messages = stronger influence
+- Jailbreak summary should describe critical enforcement (100-300 words)
+
+### Parameter Selection
+Choose parameters based on use case:
+- Creative Writing: temp 0.9-1.1, top_p 0.95-0.99, top_k 40-80, min_p 0.05-0.1
+- Roleplay: temp 0.8-1.0, top_p 0.9-0.95, top_k 40-60, min_p 0.08-0.12
+- NSFW: temp 1.0-1.2, top_p 0.95-0.99, top_k 60-100, min_p 0.05-0.08
+- Analytical: temp 0.6-0.8, top_p 0.85-0.92, top_k 30-50, min_p 0.1-0.15
+
+## USER DESCRIPTION
+${userDescription}
+
+Generate the structural plan now. Return ONLY the JSON object.`;
+}
+
+/**
+ * Builds the Pass 2 prompt for two-pass generation (full content generation).
+ * @param {object} plan - The plan object from Pass 1.
+ * @param {string} userDescription - The original user description.
+ * @returns {string} The Pass 2 system prompt.
+ */
+export function buildPass2ContentPrompt(plan, userDescription) {
+    return `You are a SillyTavern preset content writer. You have been given a structural plan for a Chat Completion preset and the user's original description. Your job is to write the full content for every component.
+
+## USER'S ORIGINAL DESCRIPTION
+${userDescription}
+
+## STRUCTURAL PLAN
+${JSON.stringify(plan, null, 2)}
+
+## YOUR TASK
+Generate the complete content for this preset. Return a JSON object with this exact schema:
+
+{
+  "main_prompt": "<Full main prompt content here>",
+  "nsfw_prompt": "<Full NSFW prompt content here, or empty string>",
+  "jailbreak_prompt": "<Full jailbreak/PHI content here>",
+  "prompts": [
+    {
+      "name": "<Exact name from plan>",
+      "role": "system",
+      "content": "<THE FULL PROMPT CONTENT>",
+      "injection_position": 0,
+      "injection_depth": 4,
+      "injection_order": 100,
+      "enabled": true
+    }
+  ]
+}
+
+## CRITICAL RULES
+
+### Generate content for EVERY prompt in the plan
+- Do not skip any prompts from the plan
+- Match the estimated word count from the plan for each prompt
+- The "name" field must EXACTLY match the name from the plan
+- Copy injection_position, injection_depth, injection_order, role, enabled from the plan
+
+### Content Quality Standards
+- Every instruction must be specific and actionable. Never write "be creative" or "write well."
+- Use concrete examples, numbers, ranges, percentages where helpful
+- Use SillyTavern macros: {{char}}, {{user}}, {{lastUserMessage}}, {{personality}}, {{scenario}}, {{description}}, {{persona}}
+- Wrap meta-comments in {{// comment }} and end with {{trim}} to prevent token waste
+- Each prompt should do ONE thing well (modular, independently toggleable)
+
+### Main Prompt Content
+- Write based on main_prompt_summary from the plan
+- Include: role assignment, identity isolation (user vs character), core narrative rules
+- Keep focused (100-300 words) — this is the FOUNDATION, not the kitchen sink
+
+### NSFW Prompt Content
+- Write based on nsfw_prompt_summary from the plan
+- If summary is empty, return empty string
+- Otherwise write appropriate NSFW guidelines
+
+### Jailbreak Prompt Content
+- Write based on jailbreak_prompt_summary from the plan
+- This is the LAST thing the model sees — maximum recency influence
+- Include: critical output format enforcement, style rules that must not be forgotten, length requirements
+- Keep focused and token-efficient (100-300 words)
+
+### Writing Style Prompts
+- Must be SUBSTANTIAL (200-500 words) with specific techniques
+- Include concrete guidance:
+  * Sentence length variation patterns (e.g., "40% short (5-12 words), 40% medium (13-20 words), 20% long (21-30 words)")
+  * Paragraph structure expectations
+  * Vocabulary preferences and bans (concrete examples)
+  * Sensory detail density
+  * Dialogue formatting rules
+  * How internal thoughts are rendered
+
+### Anti-Cliché Prompts
+- List concrete examples of banned phrases/patterns
+- Examples: "shivers down spine", "eyes widening in shock", "a mixture of X and Y", "heart racing", "breath hitching"
+- Include overused metaphors, purple prose patterns
+
+### Chain of Thought Prompts
+- CoT System Prompt: Structured thinking steps with word budgets per step
+  * Review current situation (time, place, character states)
+  * Analyze user's latest input and intent
+  * Check character personality against planned response
+  * Plan pacing and scene progression
+  * Review style and writing rules
+  * Transition to output
+- CoT Prefill (role: "assistant"): Short priming text like "<think>\\nLet me carefully consider this situation."
+- Wrap thinking in <think></think> or <thinking></thinking> tags
+- NEVER include "list all rules you might violate" — counterproductive priming
+
+### Anti-Pattern Prompts
+- Each should be SHORT (30-80 words) and focused on ONE specific problem
+- Examples:
+  * Anti-Omniscience: Characters only know what they would realistically know
+  * Anti-Repetition: Avoid repeating sentence structures, phrases, story beats
+  * Anti-Summarization: Don't recap what just happened, move forward
+  * Anti-Rushing: Don't skip important moments, let scenes breathe
+  * Anti-Purple-Prose: Avoid overwrought metaphors and excessive adjectives
+  * Anti-Talking-Heads: Include action, environment, body language
+
+### Guidelines Prompt
+- Format as bulleted or numbered list for easy user editing
+- Pre-populate with smart defaults based on user's description
+- 100-200 words of starter guidelines
+
+### Output Control Prompts
+- Word Count: Specific ranges (e.g., "Target 300-600 words. Minimum 200, maximum 800.")
+- Response Structure: Expected format (paragraphs only? headers allowed? dialogue formatting?)
+
+## OUTPUT
+Return ONLY the JSON object. No markdown fences, no commentary, no explanation.`;
+}
+
+/**
+ * Builds a Pass 2 prompt for a batch of prompts (used when full generation would truncate).
+ * @param {object} plan - The full plan object from Pass 1.
+ * @param {Array} promptBatch - Subset of prompt_plan entries to generate content for.
+ * @param {string} userDescription - The original user description.
+ * @param {number} batchIndex - Which batch this is (for progress display).
+ * @param {number} totalBatches - Total number of batches.
+ * @returns {string} The Pass 2 batch prompt.
+ */
+export function buildPass2BatchPrompt(plan, promptBatch, userDescription, batchIndex, totalBatches) {
+    return `You are a SillyTavern preset content writer. You are generating content for batch ${batchIndex} of ${totalBatches}.
+
+## USER'S ORIGINAL DESCRIPTION
+${userDescription}
+
+## FULL PLAN CONTEXT
+${JSON.stringify(plan, null, 2)}
+
+## PROMPTS TO GENERATE IN THIS BATCH
+${JSON.stringify(promptBatch, null, 2)}
+
+## YOUR TASK
+Generate ONLY the content for the prompts listed in "PROMPTS TO GENERATE IN THIS BATCH". Return a JSON array:
+
+[
+  {
+    "name": "<Exact name from batch>",
+    "role": "system",
+    "content": "<THE FULL PROMPT CONTENT>",
+    "injection_position": 0,
+    "injection_depth": 4,
+    "injection_order": 100,
+    "enabled": true
+  }
+]
+
+## CRITICAL RULES
+- Generate content for EVERY prompt in the batch
+- Match the estimated word count from the plan
+- The "name" field must EXACTLY match the name from the batch
+- Follow all content quality standards from the full plan
+- Use SillyTavern macros: {{char}}, {{user}}, {{lastUserMessage}}, {{personality}}, {{scenario}}, {{description}}, {{persona}}
+- Every instruction must be specific and actionable
+- Wrap meta-comments in {{// comment }} with {{trim}}
+
+Return ONLY the JSON array. No markdown fences, no commentary.`;
+}
+
+/**
  * Builds the system prompt for the self-audit / quality check pass.
  * Operates on the focused schema (prompts + parameters only, no boilerplate).
  * @param {string} focusedJson - The focused JSON output from the generation step.
