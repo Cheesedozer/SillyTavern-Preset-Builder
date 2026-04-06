@@ -1,18 +1,31 @@
 /**
  * Describe tab logic for the Preset Builder extension.
  * Handles generation, draft preview, editing, explanation, and download.
+ *
+ * Generation flow:
+ * 1. Claude returns focused JSON (prompts + parameters only)
+ * 2. assemblePreset() merges Claude's output into the boilerplate template
+ * 3. The full preset is displayed in the editable draft UI
  */
 
 import { buildGenerationPrompt, buildAuditPrompt, buildExplanationPrompt } from './prompts.js';
+import { getBasePresetTemplate } from './preset-template.js';
 import { getSettings, saveSettings } from './index.js';
 
-/** @type {object|null} The current draft preset data */
+/** @type {object|null} The current full assembled preset */
 let currentDraft = null;
 
 /** @type {boolean} Whether a generation is in progress */
 let isGenerating = false;
 
 const ROLES = ['system', 'user', 'assistant'];
+
+const SYSTEM_IDENTIFIERS = new Set([
+    'main', 'nsfw', 'jailbreak', 'chatHistory', 'dialogueExamples',
+    'charDescription', 'charPersonality', 'scenario',
+    'personaDescription', 'worldInfoBefore', 'worldInfoAfter',
+    'enhanceDefinitions',
+]);
 
 /**
  * Initialize event listeners for the Describe tab.
@@ -81,7 +94,7 @@ export function initDescribeTab() {
 }
 
 /**
- * Main generation flow: generate preset from description.
+ * Main generation flow: get focused output from Claude, then assemble full preset.
  * @param {string} description
  */
 async function generatePreset(description) {
@@ -104,7 +117,7 @@ async function generatePreset(description) {
     try {
         const { generateRaw } = SillyTavern.getContext();
 
-        // Step 1: Generate preset
+        // Step 1: Generate focused content (prompts + parameters only)
         updateProgress('Generating prompt entries and parameters...');
         const generationPrompt = buildGenerationPrompt(description);
         const rawResult = await generateRaw({
@@ -116,13 +129,13 @@ async function generatePreset(description) {
             throw new Error('Generation returned empty result. Make sure you have an LLM API configured.');
         }
 
-        let presetJson = extractJson(rawResult);
-        let preset = JSON.parse(presetJson);
+        let focusedJson = extractJson(rawResult);
+        let focusedOutput = parseJsonSafe(focusedJson);
 
-        // Step 2: Self-audit (if enabled)
+        // Step 2: Self-audit on the focused output (if enabled)
         if (settings.selfAuditEnabled) {
             updateProgress('Running quality check...');
-            const auditPrompt = buildAuditPrompt(presetJson, description);
+            const auditPrompt = buildAuditPrompt(focusedJson, description);
             const auditResult = await generateRaw({
                 prompt: auditPrompt,
                 systemPrompt: '',
@@ -131,19 +144,22 @@ async function generatePreset(description) {
             if (auditResult) {
                 try {
                     const auditJson = extractJson(auditResult);
-                    const auditedPreset = JSON.parse(auditJson);
-                    preset = auditedPreset;
-                    presetJson = auditJson;
+                    const audited = parseJsonSafe(auditJson);
+                    focusedOutput = audited;
+                    focusedJson = auditJson;
                 } catch {
                     console.warn('[PresetBuilder] Audit response was not valid JSON, using original.');
                 }
             }
         }
 
-        // Step 3: Display draft
-        updateProgress('Building preview...');
-        currentDraft = preset;
-        renderDraftPreview(preset);
+        // Step 3: Assemble full preset from focused output + boilerplate
+        updateProgress('Building preset structure...');
+        const fullPreset = assemblePreset(focusedOutput);
+
+        // Step 4: Display draft
+        currentDraft = fullPreset;
+        renderDraftPreview(fullPreset);
         $('#pb-draft-preview').slideDown(300);
         toastr.success('Preset generated successfully!');
     } catch (err) {
@@ -153,6 +169,230 @@ async function generatePreset(description) {
         isGenerating = false;
         $('#pb-progress').hide();
     }
+}
+
+/**
+ * Parse JSON with truncation detection and a simple repair attempt.
+ * @param {string} jsonStr
+ * @returns {object}
+ */
+function parseJsonSafe(jsonStr) {
+    try {
+        return JSON.parse(jsonStr);
+    } catch (firstError) {
+        // Check for truncation — the response ends without proper closure
+        const trimmed = jsonStr.trimEnd();
+        if (!trimmed.endsWith('}')) {
+            console.warn('[PresetBuilder] JSON appears truncated, attempting repair...');
+            const repaired = tryRepairJson(trimmed);
+            if (repaired) {
+                toastr.warning('The LLM response was truncated. A partial preset was recovered — review carefully.');
+                return repaired;
+            }
+            throw new Error(
+                'The LLM response was truncated (JSON cut off mid-output). ' +
+                'Try simplifying your description or disabling the self-audit pass.',
+            );
+        }
+        throw firstError;
+    }
+}
+
+/**
+ * Attempt to repair truncated JSON by closing open structures.
+ * Uses simple brace/bracket counting — not a full parser.
+ * @param {string} json
+ * @returns {object|null}
+ */
+function tryRepairJson(json) {
+    let repaired = json;
+
+    // Close any open string (find last unescaped quote parity)
+    const quoteCount = (repaired.match(/(?<!\\)"/g) || []).length;
+    if (quoteCount % 2 !== 0) {
+        repaired += '"';
+    }
+
+    // Count open braces and brackets
+    let braces = 0;
+    let brackets = 0;
+    let inString = false;
+    for (let i = 0; i < repaired.length; i++) {
+        const ch = repaired[i];
+        if (ch === '"' && (i === 0 || repaired[i - 1] !== '\\')) {
+            inString = !inString;
+            continue;
+        }
+        if (inString) continue;
+        if (ch === '{') braces++;
+        else if (ch === '}') braces--;
+        else if (ch === '[') brackets++;
+        else if (ch === ']') brackets--;
+    }
+
+    // Remove trailing comma before closing
+    repaired = repaired.replace(/,\s*$/, '');
+
+    // Close open structures
+    while (brackets > 0) { repaired += ']'; brackets--; }
+    while (braces > 0) { repaired += '}'; braces--; }
+
+    try {
+        return JSON.parse(repaired);
+    } catch {
+        return null;
+    }
+}
+
+/**
+ * Merge Claude's focused output into the full boilerplate preset template.
+ * @param {object} claudeOutput - The focused JSON from Claude.
+ * @returns {object} The complete preset object.
+ */
+function assemblePreset(claudeOutput) {
+    const preset = getBasePresetTemplate();
+
+    // Merge generation parameters
+    if (claudeOutput.parameters) {
+        for (const [key, value] of Object.entries(claudeOutput.parameters)) {
+            preset[key] = value;
+        }
+    }
+
+    // Set top-level prompt fields
+    preset.main_prompt = claudeOutput.main_prompt || '';
+    preset.nsfw_prompt = claudeOutput.nsfw_prompt || '';
+    preset.jailbreak_prompt = claudeOutput.jailbreak_prompt || '';
+
+    // Build standard prompt entries with fixed identifiers
+    const standardPrompts = [
+        {
+            identifier: 'main',
+            name: 'Main Prompt',
+            system_prompt: true,
+            role: 'system',
+            content: preset.main_prompt,
+            enabled: true,
+            marker: false,
+            forbid_overrides: false,
+        },
+        {
+            identifier: 'nsfw',
+            name: 'NSFW Prompt',
+            system_prompt: true,
+            role: 'system',
+            content: preset.nsfw_prompt,
+            enabled: Boolean(preset.nsfw_prompt),
+            marker: false,
+            forbid_overrides: false,
+        },
+        {
+            identifier: 'dialogueExamples',
+            name: 'Chat Examples',
+            system_prompt: true,
+            role: 'system',
+            content: '',
+            enabled: true,
+            marker: true,
+        },
+        {
+            identifier: 'chatHistory',
+            name: 'Chat History',
+            system_prompt: true,
+            role: 'system',
+            content: '',
+            enabled: true,
+            marker: true,
+        },
+        {
+            identifier: 'jailbreak',
+            name: 'Post-History Instructions',
+            system_prompt: true,
+            role: 'system',
+            content: preset.jailbreak_prompt,
+            enabled: true,
+            marker: false,
+            forbid_overrides: false,
+        },
+    ];
+
+    // Process custom prompts — generate UUIDs, add boilerplate fields
+    // Build a name→UUID map for prompt_order resolution
+    const nameToUuid = new Map();
+    const customPrompts = (claudeOutput.prompts || []).map(p => {
+        const uuid = crypto.randomUUID();
+        nameToUuid.set(p.name, uuid);
+        return {
+            identifier: uuid,
+            name: p.name,
+            enabled: p.enabled ?? true,
+            injection_position: p.injection_position ?? 0,
+            injection_depth: p.injection_depth ?? 4,
+            injection_order: p.injection_order ?? 100,
+            role: p.role || 'system',
+            content: p.content || '',
+            system_prompt: false,
+            marker: false,
+            forbid_overrides: false,
+        };
+    });
+
+    preset.prompts = [...standardPrompts, ...customPrompts];
+
+    // Build prompt_order — resolve custom prompt names to UUIDs
+    if (claudeOutput.prompt_order && Array.isArray(claudeOutput.prompt_order)) {
+        const resolvedOrder = claudeOutput.prompt_order.map(entry => {
+            // System identifiers stay as-is
+            if (SYSTEM_IDENTIFIERS.has(entry.identifier)) {
+                return { identifier: entry.identifier, enabled: entry.enabled ?? true };
+            }
+            // Custom prompt — find by name and replace with UUID
+            const uuid = nameToUuid.get(entry.identifier);
+            if (uuid) {
+                return { identifier: uuid, enabled: entry.enabled ?? true };
+            }
+            // Unknown identifier — keep as-is (shouldn't happen, but safe)
+            return entry;
+        });
+        preset.prompt_order = [{ character_id: 100000, order: resolvedOrder }];
+    } else {
+        // Fallback: build a default prompt_order
+        preset.prompt_order = [{ character_id: 100000, order: buildDefaultPromptOrder(customPrompts) }];
+    }
+
+    return preset;
+}
+
+/**
+ * Build a default prompt_order when Claude doesn't provide one.
+ * @param {object[]} customPrompts
+ * @returns {object[]}
+ */
+function buildDefaultPromptOrder(customPrompts) {
+    const order = [
+        { identifier: 'main', enabled: true },
+        { identifier: 'nsfw', enabled: false },
+        { identifier: 'charDescription', enabled: true },
+        { identifier: 'charPersonality', enabled: true },
+        { identifier: 'scenario', enabled: true },
+        { identifier: 'personaDescription', enabled: true },
+        { identifier: 'worldInfoBefore', enabled: true },
+        { identifier: 'enhanceDefinitions', enabled: false },
+        { identifier: 'dialogueExamples', enabled: true },
+    ];
+
+    // Insert custom prompts before chatHistory
+    for (const p of customPrompts) {
+        order.push({ identifier: p.identifier, enabled: p.enabled });
+    }
+
+    order.push(
+        { identifier: 'chatHistory', enabled: true },
+        { identifier: 'worldInfoAfter', enabled: true },
+        { identifier: 'jailbreak', enabled: true },
+    );
+
+    return order;
 }
 
 /**
@@ -186,7 +426,7 @@ function updateProgress(text) {
 }
 
 /**
- * Render the full draft preview from a preset object.
+ * Render the full draft preview from an assembled preset object.
  * @param {object} preset
  */
 function renderDraftPreview(preset) {
@@ -371,13 +611,6 @@ function assembleDraftFromUI() {
     const prompts = [];
     const promptOrder = [];
 
-    // Collect system markers that exist in the original prompt_order but aren't prompt cards
-    const systemMarkers = [
-        'charDescription', 'charPersonality', 'scenario',
-        'personaDescription', 'worldInfoBefore', 'enhanceDefinitions',
-        'worldInfoAfter',
-    ];
-
     $('#pb-prompt-list .pb-prompt-card').each(function () {
         const $card = $(this);
         const identifier = $card.data('identifier');
@@ -389,7 +622,7 @@ function assembleDraftFromUI() {
             enabled: $card.find('.pb-prompt-toggle').is(':checked'),
             role: $card.find('.pb-role-badge').data('role') || 'system',
             content: isMarker ? '' : ($card.find('.pb-prompt-content').val() || ''),
-            system_prompt: ['main', 'nsfw', 'jailbreak', 'dialogueExamples', 'chatHistory'].includes(String(identifier)),
+            system_prompt: SYSTEM_IDENTIFIERS.has(String(identifier)),
             marker: isMarker,
             forbid_overrides: false,
         };
@@ -409,24 +642,22 @@ function assembleDraftFromUI() {
 
     preset.prompts = prompts;
 
-    // Rebuild prompt_order, preserving system markers
+    // Rebuild prompt_order, preserving system markers from the original
     const existingIdentifiers = new Set(promptOrder.map(p => p.identifier));
     const fullOrder = [];
 
-    // Use the original prompt_order as a guide if it exists
-    if (currentDraft.prompt_order && currentDraft.prompt_order[0] && currentDraft.prompt_order[0].order) {
+    if (currentDraft.prompt_order?.[0]?.order) {
         for (const entry of currentDraft.prompt_order[0].order) {
             if (existingIdentifiers.has(entry.identifier)) {
                 const uiEntry = promptOrder.find(p => p.identifier === entry.identifier);
                 fullOrder.push(uiEntry || entry);
-            } else if (systemMarkers.includes(entry.identifier)) {
+            } else if (SYSTEM_IDENTIFIERS.has(entry.identifier)) {
                 fullOrder.push(entry);
             }
         }
         // Add any new prompts that weren't in the original order
         for (const entry of promptOrder) {
             if (!fullOrder.find(e => e.identifier === entry.identifier)) {
-                // Insert before jailbreak if possible
                 const jbIndex = fullOrder.findIndex(e => e.identifier === 'jailbreak');
                 if (jbIndex !== -1) {
                     fullOrder.splice(jbIndex, 0, entry);
@@ -436,14 +667,8 @@ function assembleDraftFromUI() {
             }
         }
     } else {
-        // Fallback: construct a basic order
         for (const entry of promptOrder) {
             fullOrder.push(entry);
-        }
-        for (const marker of systemMarkers) {
-            if (!fullOrder.find(e => e.identifier === marker)) {
-                fullOrder.push({ identifier: marker, enabled: true });
-            }
         }
     }
 
@@ -471,7 +696,6 @@ function downloadPreset() {
         return;
     }
 
-    // Generate filename from description
     const description = $('#pb-description-input').val().trim();
     const filename = generateFilename(description);
 
