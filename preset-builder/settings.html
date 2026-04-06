@@ -1,0 +1,176 @@
+<div class="preset-builder-settings">
+    <div class="inline-drawer">
+        <div class="inline-drawer-toggle inline-drawer-header">
+            <b>Preset Builder</b>
+            <div class="inline-drawer-icon fa-solid fa-circle-chevron-down down"></div>
+        </div>
+        <div class="inline-drawer-content">
+            <!-- Tab Bar -->
+            <div class="pb-tab-bar">
+                <div class="pb-tab active" data-tab="describe">Describe</div>
+                <div class="pb-tab" data-tab="build">Build</div>
+                <div class="pb-tab" data-tab="improve">Improve</div>
+                <div class="pb-tab" data-tab="export">Export</div>
+            </div>
+
+            <!-- ==================== DESCRIBE TAB ==================== -->
+            <div class="pb-tab-content active" data-tab="describe">
+                <!-- Description Input -->
+                <div class="pb-section">
+                    <textarea id="pb-description-input" class="text_pole pb-description-textarea" rows="5"
+                        placeholder="Describe what you want your preset to do. Include the use case (roleplay, creative writing, etc.), desired tone and style, any constraints, and which model you're targeting (Claude, GPT, Gemini, etc.)..."></textarea>
+
+                    <!-- Quick Tags -->
+                    <div class="pb-quick-tags">
+                        <span class="pb-tag" data-tag="Roleplay">Roleplay</span>
+                        <span class="pb-tag" data-tag="Creative Writing">Creative Writing</span>
+                        <span class="pb-tag" data-tag="Chat">Chat</span>
+                        <span class="pb-tag" data-tag="NSFW">NSFW</span>
+                        <span class="pb-tag" data-tag="Claude">Claude</span>
+                        <span class="pb-tag" data-tag="GPT">GPT</span>
+                        <span class="pb-tag" data-tag="Gemini">Gemini</span>
+                        <span class="pb-tag" data-tag="Local Model">Local Model</span>
+                        <span class="pb-tag" data-tag="Chain of Thought">Chain of Thought</span>
+                        <span class="pb-tag" data-tag="Minimal/Clean">Minimal/Clean</span>
+                        <span class="pb-tag" data-tag="Literary">Literary</span>
+                        <span class="pb-tag" data-tag="Casual">Casual</span>
+                    </div>
+
+                    <div class="pb-generate-row">
+                        <input id="pb-self-audit-toggle" type="checkbox" checked>
+                        <label for="pb-self-audit-toggle">Self-audit pass</label>
+                        <div id="pb-generate-btn" class="menu_button menu_button_icon">
+                            <i class="fa-solid fa-wand-magic-sparkles"></i>
+                            <span>Generate Preset</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Progress Indicator -->
+                <div id="pb-progress" class="pb-progress" style="display: none;">
+                    <i class="fa-solid fa-spinner fa-spin"></i>
+                    <span id="pb-progress-text">Analyzing description...</span>
+                </div>
+
+                <!-- Draft Preview (hidden until generation) -->
+                <div id="pb-draft-preview" class="pb-draft-preview" style="display: none;">
+                    <h4>Generated Preset Draft</h4>
+
+                    <!-- Prompt Entries -->
+                    <div class="pb-section">
+                        <div class="inline-drawer">
+                            <div class="inline-drawer-toggle inline-drawer-header">
+                                <b>Prompt Entries</b>
+                                <div class="inline-drawer-icon fa-solid fa-circle-chevron-down down"></div>
+                            </div>
+                            <div class="inline-drawer-content">
+                                <div id="pb-prompt-list"></div>
+                                <div id="pb-add-prompt-btn" class="menu_button menu_button_icon pb-add-prompt-btn">
+                                    <i class="fa-solid fa-plus"></i>
+                                    <span>Add Prompt</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Parameters -->
+                    <div class="pb-section">
+                        <div class="inline-drawer">
+                            <div class="inline-drawer-toggle inline-drawer-header">
+                                <b>Parameters</b>
+                                <div class="inline-drawer-icon fa-solid fa-circle-chevron-down down"></div>
+                            </div>
+                            <div class="inline-drawer-content">
+                                <div class="pb-params-grid">
+                                    <div class="pb-param-item">
+                                        <label>Temperature</label>
+                                        <input type="number" id="pb-param-temperature" class="text_pole" step="0.05" min="0" max="2">
+                                    </div>
+                                    <div class="pb-param-item">
+                                        <label>Top P</label>
+                                        <input type="number" id="pb-param-top_p" class="text_pole" step="0.01" min="0" max="1">
+                                    </div>
+                                    <div class="pb-param-item">
+                                        <label>Top K</label>
+                                        <input type="number" id="pb-param-top_k" class="text_pole" step="1" min="0" max="500">
+                                    </div>
+                                    <div class="pb-param-item">
+                                        <label>Min P</label>
+                                        <input type="number" id="pb-param-min_p" class="text_pole" step="0.01" min="0" max="1">
+                                    </div>
+                                    <div class="pb-param-item">
+                                        <label>Max Context</label>
+                                        <input type="number" id="pb-param-openai_max_context" class="text_pole" step="1024" min="1024" max="200000">
+                                    </div>
+                                    <div class="pb-param-item">
+                                        <label>Max Tokens</label>
+                                        <input type="number" id="pb-param-openai_max_tokens" class="text_pole" step="50" min="50" max="32000">
+                                    </div>
+                                    <div class="pb-param-item">
+                                        <label>Frequency Penalty</label>
+                                        <input type="number" id="pb-param-frequency_penalty" class="text_pole" step="0.05" min="0" max="2">
+                                    </div>
+                                    <div class="pb-param-item">
+                                        <label>Presence Penalty</label>
+                                        <input type="number" id="pb-param-presence_penalty" class="text_pole" step="0.05" min="0" max="2">
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Action Buttons -->
+                    <div class="pb-actions-row">
+                        <div id="pb-regenerate-btn" class="menu_button menu_button_icon">
+                            <i class="fa-solid fa-rotate"></i>
+                            <span>Regenerate</span>
+                        </div>
+                        <div id="pb-explain-btn" class="menu_button menu_button_icon">
+                            <i class="fa-solid fa-lightbulb"></i>
+                            <span>Explain This Preset</span>
+                        </div>
+                        <div id="pb-download-btn" class="menu_button menu_button_icon">
+                            <i class="fa-solid fa-download"></i>
+                            <span>Download Preset</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Explanation Panel -->
+                <div id="pb-explanation-panel" class="pb-explanation-panel" style="display: none;">
+                    <div class="pb-explanation-header">
+                        <h4>Preset Explanation</h4>
+                        <div id="pb-explanation-close" class="menu_button menu_button_icon">
+                            <i class="fa-solid fa-xmark"></i>
+                        </div>
+                    </div>
+                    <div id="pb-explanation-content"></div>
+                </div>
+            </div>
+
+            <!-- ==================== BUILD TAB ==================== -->
+            <div class="pb-tab-content" data-tab="build">
+                <div class="pb-placeholder">
+                    <i class="fa-solid fa-hammer"></i>
+                    <p>Step-by-step preset wizard coming soon.</p>
+                </div>
+            </div>
+
+            <!-- ==================== IMPROVE TAB ==================== -->
+            <div class="pb-tab-content" data-tab="improve">
+                <div class="pb-placeholder">
+                    <i class="fa-solid fa-wand-sparkles"></i>
+                    <p>Import, analyze, and restructure existing presets coming soon.</p>
+                </div>
+            </div>
+
+            <!-- ==================== EXPORT TAB ==================== -->
+            <div class="pb-tab-content" data-tab="export">
+                <div class="pb-placeholder">
+                    <i class="fa-solid fa-file-export"></i>
+                    <p>Shared preview and export hub coming soon.</p>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
