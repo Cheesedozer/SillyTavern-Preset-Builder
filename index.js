@@ -6,7 +6,8 @@
 import { initDescribeTab } from './describe.js';
 
 const MODULE_NAME = 'preset_builder';
-const EXTENSION_PATH = 'scripts/extensions/third-party/preset-builder';
+const EXTENSION_FOLDER = import.meta.url.match(/\/scripts\/extensions\/(.+)\/index\.js/)?.[1] || 'third-party/SillyTavern-Preset-Builder';
+const EXTENSION_PATH = `scripts/extensions/${EXTENSION_FOLDER}`;
 
 const defaultSettings = Object.freeze({
     enabled: true,
