@@ -241,9 +241,9 @@ Keep jailbreak_prompt focused and token-efficient (100-300 words). Don't dump ev
 
 ### Token Efficiency
 - Keep prompts token-efficient — no unnecessary verbosity
-- Use SillyTavern macros: {{char}}, {{user}}, {{lastUserMessage}}, {{personality}}, {{scenario}}, {{description}}, {{persona}}
-- Wrap meta-comments in {{// comment }} so they don't consume tokens at runtime
-- End comment blocks with {{trim}} to prevent whitespace waste
+- Use SillyTavern macros: char, user, lastUserMessage, personality, scenario, description, persona (wrapped in double braces)
+- Wrap meta-comments in double-brace-slash-slash comment syntax so they don't consume tokens at runtime
+- End comment blocks with the trim macro to prevent whitespace waste
 - Avoid dead-weight instructions the model will ignore
 
 ### Actionability
@@ -309,7 +309,7 @@ Only generate CoT prompts if the user explicitly requests thinking/reasoning/cha
 ### Good CoT Steps
 1. **Situation Review** (100-150 words): Current time, place, character states, recent events
 2. **Input Analysis** (50-100 words): What did the user just say/do? What do they want?
-3. **Character Check** (50-100 words): Is my planned response consistent with {{char}}'s personality?
+3. **Character Check** (50-100 words): Is my planned response consistent with the character's personality?
 4. **Pacing Decision** (50-100 words): Should I advance the scene or let it breathe?
 5. **Style Calibration** (50-100 words): Review key style rules and writing guidelines
 6. **Transition** (20-30 words): "Now I will write the response."
@@ -549,8 +549,8 @@ Generate the complete content for this preset. Return a JSON object with this ex
 ### Content Quality Standards
 - Every instruction must be specific and actionable. Never write "be creative" or "write well."
 - Use concrete examples, numbers, ranges, percentages where helpful
-- Use SillyTavern macros: {{char}}, {{user}}, {{lastUserMessage}}, {{personality}}, {{scenario}}, {{description}}, {{persona}}
-- Wrap meta-comments in {{// comment }} and end with {{trim}} to prevent token waste
+- Use SillyTavern macros: char, user, lastUserMessage, personality, scenario, description, persona (wrapped in double braces)
+- Wrap meta-comments in double-brace-slash-slash comment syntax and end with the trim macro to prevent token waste
 - Each prompt should do ONE thing well (modular, independently toggleable)
 
 ### Main Prompt Content
@@ -660,9 +660,9 @@ Generate ONLY the content for the prompts listed in "PROMPTS TO GENERATE IN THIS
 - Match the estimated word count from the plan
 - The "name" field must EXACTLY match the name from the batch
 - Follow all content quality standards from the full plan
-- Use SillyTavern macros: {{char}}, {{user}}, {{lastUserMessage}}, {{personality}}, {{scenario}}, {{description}}, {{persona}}
+- Use SillyTavern macros: char, user, lastUserMessage, personality, scenario, description, persona (wrapped in double braces)
 - Every instruction must be specific and actionable
-- Wrap meta-comments in {{// comment }} with {{trim}}
+- Wrap meta-comments in double-brace-slash-slash comment syntax with the trim macro
 
 Return ONLY the JSON array. No markdown fences, no commentary.`;
 }
@@ -742,8 +742,8 @@ ${focusedJson}
 32. **NSFW handling**: If user requested NSFW content, is nsfw_prompt populated and enabled in prompt_order?
 
 ### Macros & Syntax
-33. **Macro usage**: Are SillyTavern macros used where appropriate ({{char}}, {{user}}, {{lastUserMessage}}, {{personality}}, {{scenario}}, {{description}}, {{persona}})?
-34. **Comment syntax**: Are meta-comments wrapped in {{// comment }} with {{trim}} to prevent token waste?
+33. **Macro usage**: Are SillyTavern macros used where appropriate (char, user, lastUserMessage, personality, scenario, description, persona - wrapped in double braces)?
+34. **Comment syntax**: Are meta-comments wrapped in double-brace-slash-slash comment syntax with the trim macro to prevent token waste?
 
 ## CORRECTION PRIORITIES
 

@@ -35,6 +35,74 @@ const SYSTEM_IDENTIFIERS = new Set([
 ]);
 
 /**
+ * Escape all SillyTavern macros in a string by replacing {{...}} patterns
+ * with safe placeholders that won't trigger the macro parser.
+ * Returns the escaped string and a map to restore originals.
+ * @param {string} text - The text containing macros to escape
+ * @returns {{escaped: string, macroMap: Object}} The escaped text and restoration map
+ */
+function escapeMacros(text) {
+    const macroMap = {};
+    let counter = 0;
+
+    // Match all {{...}} patterns, including nested ones
+    const escaped = text.replace(/\{\{[^}]*\}\}/g, (match) => {
+        const placeholder = `__MACRO_${counter}__`;
+        macroMap[placeholder] = match;
+        counter++;
+        return placeholder;
+    });
+
+    return { escaped, macroMap };
+}
+
+/**
+ * Restore original macros from placeholders in a string.
+ * @param {string} text - The text with placeholders
+ * @param {Object} macroMap - The map of placeholders to original macros
+ * @returns {string} The text with macros restored
+ */
+function restoreMacros(text, macroMap) {
+    let result = text;
+    for (const [placeholder, original] of Object.entries(macroMap)) {
+        result = result.replaceAll(placeholder, original);
+    }
+    return result;
+}
+
+/**
+ * Restore macros in an entire preset content result object.
+ * Handles the prompts array and top-level prompt fields.
+ * @param {Object} contentResult - The preset content object
+ * @param {Object} macroMap - The map of placeholders to original macros
+ * @returns {Object} The content with macros restored
+ */
+function restoreMacrosInPreset(contentResult, macroMap) {
+    if (!contentResult || !macroMap || Object.keys(macroMap).length === 0) {
+        return contentResult;
+    }
+
+    if (contentResult.main_prompt) {
+        contentResult.main_prompt = restoreMacros(contentResult.main_prompt, macroMap);
+    }
+    if (contentResult.nsfw_prompt) {
+        contentResult.nsfw_prompt = restoreMacros(contentResult.nsfw_prompt, macroMap);
+    }
+    if (contentResult.jailbreak_prompt) {
+        contentResult.jailbreak_prompt = restoreMacros(contentResult.jailbreak_prompt, macroMap);
+    }
+    if (contentResult.prompts) {
+        for (const prompt of contentResult.prompts) {
+            if (prompt.content) {
+                prompt.content = restoreMacros(prompt.content, macroMap);
+            }
+        }
+    }
+
+    return contentResult;
+}
+
+/**
  * Initialize event listeners for the Describe tab.
  */
 export function initDescribeTab() {
@@ -129,8 +197,9 @@ async function generatePreset(description) {
         // PASS 1: Generate structural plan
         updateProgress('Generating preset blueprint...');
         const pass1Prompt = buildPass1PlanPrompt(description);
+        const { escaped: escapedPass1Prompt, macroMap: pass1MacroMap } = escapeMacros(pass1Prompt);
         const pass1Result = await generateRaw({
-            prompt: pass1Prompt,
+            prompt: escapedPass1Prompt,
             systemPrompt: '',
             responseLength: 45000,
         });
@@ -159,8 +228,9 @@ async function generatePreset(description) {
         } else {
             updateProgress('Writing prompt content...');
             const pass2Prompt = buildPass2ContentPrompt(plan, description);
+            const { escaped: escapedPass2Prompt, macroMap: pass2MacroMap } = escapeMacros(pass2Prompt);
             const pass2Result = await generateRaw({
-                prompt: pass2Prompt,
+                prompt: escapedPass2Prompt,
                 systemPrompt: '',
                 responseLength: 45000,
             });
@@ -172,13 +242,16 @@ async function generatePreset(description) {
             const contentJson = extractJson(pass2Result);
             const content = parseJsonSafe(contentJson);
 
+            // Restore macros in the generated content
+            const restoredContent = restoreMacrosInPreset(content, pass2MacroMap);
+
             // Merge content with plan to create focused output
             focusedOutput = {
                 parameters: plan.parameters,
-                main_prompt: content.main_prompt || '',
-                nsfw_prompt: content.nsfw_prompt || '',
-                jailbreak_prompt: content.jailbreak_prompt || '',
-                prompts: content.prompts || [],
+                main_prompt: restoredContent.main_prompt || '',
+                nsfw_prompt: restoredContent.nsfw_prompt || '',
+                jailbreak_prompt: restoredContent.jailbreak_prompt || '',
+                prompts: restoredContent.prompts || [],
                 prompt_order: plan.prompt_order_plan.map(name => ({
                     identifier: name,
                     enabled: true
@@ -190,7 +263,8 @@ async function generatePreset(description) {
         if (settings.selfAuditEnabled) {
             updateProgress('Running quality check...');
             const focusedJson = JSON.stringify(focusedOutput);
-            const auditPrompt = buildAuditPrompt(focusedJson, description);
+            const { escaped: escapedFocusedJson, macroMap: auditMacroMap } = escapeMacros(focusedJson);
+            const auditPrompt = buildAuditPrompt(escapedFocusedJson, description);
             const auditResult = await generateRaw({
                 prompt: auditPrompt,
                 systemPrompt: '',
@@ -201,7 +275,9 @@ async function generatePreset(description) {
                 try {
                     const auditJson = extractJson(auditResult);
                     const audited = parseJsonSafe(auditJson);
-                    focusedOutput = audited;
+                    // Restore macros in the audited content
+                    const restoredAudited = restoreMacrosInPreset(audited, auditMacroMap);
+                    focusedOutput = restoredAudited;
                 } catch {
                     console.warn('[PresetBuilder] Audit response was not valid JSON, using original.');
                 }
@@ -260,14 +336,18 @@ Return JSON:
 Use SillyTavern macros: {{char}}, {{user}}, {{lastUserMessage}}, {{personality}}, {{scenario}}, {{description}}, {{persona}}.
 Return ONLY the JSON object.`;
 
+    const { escaped: escapedCorePrompt, macroMap: coreMacroMap } = escapeMacros(corePrompt);
     const coreResult = await generateRaw({
-        prompt: corePrompt,
+        prompt: escapedCorePrompt,
         systemPrompt: '',
         responseLength: 45000,
     });
 
     const coreJson = extractJson(coreResult);
     const coreContent = parseJsonSafe(coreJson);
+
+    // Restore macros in core content
+    const restoredCoreContent = restoreMacrosInPreset(coreContent, coreMacroMap);
 
     // Generate custom prompts in batches
     for (let i = 0; i < totalBatches; i++) {
@@ -278,8 +358,9 @@ Return ONLY the JSON object.`;
         updateProgress(`Writing content batch ${i + 1}/${totalBatches}...`);
 
         const batchPrompt = buildPass2BatchPrompt(plan, batch, description, i + 1, totalBatches);
+        const { escaped: escapedBatchPrompt, macroMap: batchMacroMap } = escapeMacros(batchPrompt);
         const batchResult = await generateRaw({
-            prompt: batchPrompt,
+            prompt: escapedBatchPrompt,
             systemPrompt: '',
             responseLength: 45000,
         });
@@ -294,6 +375,12 @@ Return ONLY the JSON object.`;
 
         // batchContent should be an array of prompt objects
         if (Array.isArray(batchContent)) {
+            // Restore macros in each prompt
+            for (const prompt of batchContent) {
+                if (prompt.content) {
+                    prompt.content = restoreMacros(prompt.content, batchMacroMap);
+                }
+            }
             allPrompts.push(...batchContent);
         } else {
             console.warn(`[PresetBuilder] Batch ${i + 1} did not return an array, skipping`);
@@ -303,9 +390,9 @@ Return ONLY the JSON object.`;
     // Assemble the focused output
     return {
         parameters: plan.parameters,
-        main_prompt: coreContent.main_prompt || '',
-        nsfw_prompt: coreContent.nsfw_prompt || '',
-        jailbreak_prompt: coreContent.jailbreak_prompt || '',
+        main_prompt: restoredCoreContent.main_prompt || '',
+        nsfw_prompt: restoredCoreContent.nsfw_prompt || '',
+        jailbreak_prompt: restoredCoreContent.jailbreak_prompt || '',
         prompts: allPrompts,
         prompt_order: plan.prompt_order_plan.map(name => ({
             identifier: name,
@@ -727,7 +814,9 @@ async function explainPreset() {
 
     try {
         const { generateRaw } = SillyTavern.getContext();
-        const prompt = buildExplanationPrompt(JSON.stringify(preset, null, 2));
+        const presetJson = JSON.stringify(preset, null, 2);
+        const { escaped: escapedPresetJson, macroMap: explainMacroMap } = escapeMacros(presetJson);
+        const prompt = buildExplanationPrompt(escapedPresetJson);
         const result = await generateRaw({
             prompt,
             systemPrompt: '',
