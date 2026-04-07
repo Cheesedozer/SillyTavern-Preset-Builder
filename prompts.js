@@ -333,13 +333,24 @@ Generate the complete content for this preset. Return a JSON object with this ex
   * "Let scenes breathe. Don't skip important moments." (anti-rushing)
 
 Return ONLY the JSON object. No markdown fences, no commentary.`;
-- Examples:
-  * Anti-Omniscience: Characters only know what they would realistically know
-  * Anti-Repetition: Avoid repeating sentence structures, phrases, story beats
-  * Anti-Summarization: Don't recap what just happened, move forward
-  * Anti-Rushing: Don't skip important moments, let scenes breathe
-  * Anti-Purple-Prose: Avoid overwrought metaphors and excessive adjectives
-  * Anti-Talking-Heads: Include action, environment, body language
+}
+
+/**
+ * Builds the self-audit prompt for reviewing generated presets.
+ * @param {object} generatedPreset - The preset object to audit.
+ * @param {string} userDescription - The original user description.
+ * @returns {string} The audit prompt.
+ */
+export function buildAuditPrompt(generatedPreset, userDescription) {
+    return `You are a SillyTavern preset quality auditor. Review the following generated preset against the user's original description and best practices.
+
+## USER'S ORIGINAL DESCRIPTION
+${userDescription}
+
+## GENERATED PRESET
+${JSON.stringify(generatedPreset, null, 2)}
+
+## AUDIT CHECKLIST
 
 ### Guidelines Prompt
 - Format as bulleted or numbered list for easy user editing
