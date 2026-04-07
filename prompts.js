@@ -341,30 +341,6 @@ Return ONLY the JSON object. No markdown fences, no commentary.`;
  * @param {string} userDescription - The original user description.
  * @returns {string} The audit prompt.
  */
-export function buildAuditPrompt(generatedPreset, userDescription) {
-    return `You are a SillyTavern preset quality auditor. Review the following generated preset against the user's original description and best practices.
-
-## USER'S ORIGINAL DESCRIPTION
-${userDescription}
-
-## GENERATED PRESET
-${JSON.stringify(generatedPreset, null, 2)}
-
-## AUDIT CHECKLIST
-
-### Guidelines Prompt
-- Format as bulleted or numbered list for easy user editing
-- Pre-populate with smart defaults based on user's description
-- 100-200 words of starter guidelines
-
-### Output Control Prompts
-- Word Count: Specific ranges (e.g., "Target 300-600 words. Minimum 200, maximum 800.")
-- Response Structure: Expected format (paragraphs only? headers allowed? dialogue formatting?)
-
-## OUTPUT
-Return ONLY the JSON object. No markdown fences, no commentary, no explanation.`;
-}
-
 /**
  * Builds a Pass 2 prompt for a batch of prompts (used when full generation would truncate).
  * @param {object} plan - The full plan object from Pass 1.
