@@ -65,7 +65,7 @@ function initTabs() {
 (async function init() {
     // Load HTML template
     const html = await $.get(`/${EXTENSION_PATH}/settings.html`);
-    $('#extensions_settings2').append(html);
+    $('#extensions_settings').append(html);
 
     // Initialize settings
     getSettings();
