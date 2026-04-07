@@ -526,6 +526,7 @@ function assemblePreset(claudeOutput) {
             enabled: true,
             marker: false,
             forbid_overrides: false,
+            injection_trigger: [],
         },
         {
             identifier: 'nsfw',
@@ -536,6 +537,7 @@ function assemblePreset(claudeOutput) {
             enabled: Boolean(preset.nsfw_prompt),
             marker: false,
             forbid_overrides: false,
+            injection_trigger: [],
         },
         {
             identifier: 'dialogueExamples',
@@ -545,6 +547,7 @@ function assemblePreset(claudeOutput) {
             content: '',
             enabled: true,
             marker: true,
+            injection_trigger: [],
         },
         {
             identifier: 'chatHistory',
@@ -554,6 +557,7 @@ function assemblePreset(claudeOutput) {
             content: '',
             enabled: true,
             marker: true,
+            injection_trigger: [],
         },
         {
             identifier: 'jailbreak',
@@ -564,6 +568,7 @@ function assemblePreset(claudeOutput) {
             enabled: true,
             marker: false,
             forbid_overrides: false,
+            injection_trigger: [],
         },
     ];
 
@@ -585,6 +590,7 @@ function assemblePreset(claudeOutput) {
             system_prompt: false,
             marker: false,
             forbid_overrides: false,
+            injection_trigger: [],
         };
     });
 
@@ -605,10 +611,10 @@ function assemblePreset(claudeOutput) {
             // Unknown identifier — keep as-is (shouldn't happen, but safe)
             return entry;
         });
-        preset.prompt_order = [{ character_id: 100000, order: resolvedOrder }];
+        preset.prompt_order = [{ character_id: 100001, order: resolvedOrder }];
     } else {
         // Fallback: build a default prompt_order
-        preset.prompt_order = [{ character_id: 100000, order: buildDefaultPromptOrder(customPrompts) }];
+        preset.prompt_order = [{ character_id: 100001, order: buildDefaultPromptOrder(customPrompts) }];
     }
 
     return preset;
@@ -791,6 +797,7 @@ function addBlankPrompt() {
         injection_position: 0,
         injection_depth: 4,
         injection_order: 100,
+        injection_trigger: [],
     };
 
     const $card = createPromptCard(newPrompt);
@@ -879,6 +886,7 @@ function assembleDraftFromUI() {
             system_prompt: SYSTEM_IDENTIFIERS.has(String(identifier)),
             marker: isMarker,
             forbid_overrides: false,
+            injection_trigger: [],
         };
 
         if (!isMarker) {
@@ -929,7 +937,7 @@ function assembleDraftFromUI() {
         }
     }
 
-    preset.prompt_order = [{ character_id: 100000, order: fullOrder }];
+    preset.prompt_order = [{ character_id: 100001, order: fullOrder }];
 
     // Sync top-level prompt fields
     const mainPrompt = prompts.find(p => p.identifier === 'main');
