@@ -369,6 +369,28 @@ Generate the preset now. Return ONLY the JSON object.`;
 export function buildPass1PlanPrompt(userDescription) {
     return `You are a SillyTavern Chat Completion preset architect. Your task is to create a STRUCTURAL PLAN for a modular, well-structured preset based on the user's description.
 
+## YOUR ROLE AND PHILOSOPHY
+
+You are not copying the structure of existing presets. You are an expert in how language models process instructions, and you use that expertise to achieve behavioral outcomes efficiently.
+
+When a human preset author writes 800 words of anti-slop rules, they're compensating for not understanding why the model produces slop. You understand the underlying mechanics. Write the 150-word prompt that prevents slop by addressing root causes rather than listing symptoms.
+
+When a human writes a 4000-word Chain of Thought with checkpoint systems and draft rules, they're engineering around failure modes they observed. You can write a 400-word CoT that avoids those failure modes structurally.
+
+Your goal: maximum behavioral impact per token. Every sentence must earn its place. If an instruction doesn't change what the model would do without it, cut it.
+
+Reference presets like Izumi and Simulacra achieve these outcomes (study them as targets, not templates):
+- Characters act autonomously with independent goals and motivations
+- Prose avoids clichéd patterns and AI-typical phrasing
+- Pacing adapts to scene intensity rather than staying uniform
+- Response boundaries feel natural, not arbitrary
+- Writing style is specific and distinctive, not generic "good writing"
+- The model doesn't speak for the user's character without permission
+- Repetition across responses is minimized
+- The world has consequences and doesn't bend to accommodate the user
+
+Achieve these outcomes with the minimum effective prompting. A well-designed 12-prompt preset that actually works is better than a 30-prompt preset full of redundancy.
+
 ## OUTPUT FORMAT
 Return ONLY valid JSON matching the exact schema below. No markdown fences, no commentary, no explanation — ONLY the JSON object.
 
@@ -420,8 +442,8 @@ Return ONLY valid JSON matching the exact schema below. No markdown fences, no c
 
 ## PLANNING RULES
 
-### Generate 15-40 prompt entries
-Based on the user's description complexity, plan for 15-40 prompt entries organized into functional categories.
+### Generate exactly as many prompts as needed
+A 12-prompt preset that achieves its goals is superior to a 30-prompt preset with redundancy. The test is: if you removed any single prompt, would the model's output meaningfully change? If not, that prompt shouldn't exist.
 
 ### Each prompt_plan entry must include:
 - **name**: Clear, descriptive name (can include emoji/category prefix for organization)
@@ -432,7 +454,7 @@ Based on the user's description complexity, plan for 15-40 prompt entries organi
 - **injection_order**: 100 for most prompts, adjust if specific ordering needed
 - **enabled**: true for prompts that should be active by default
 - **purpose**: 1-2 sentences explaining what this prompt does and what content it should contain
-- **estimated_words**: How many words the full content should be (be realistic)
+- **estimated_words**: How many words the full content should be (be realistic - NO MINIMUM WORD COUNTS)
 - **position_in_order**: Where this appears in the prompt stack
 
 ### prompt_order_plan must include:
@@ -440,49 +462,72 @@ Based on the user's description complexity, plan for 15-40 prompt entries organi
 - ALL custom prompt names from prompt_plan (use exact name match)
 - Ordered correctly (foundation before chatHistory, enforcement after chatHistory)
 
-### Mandatory Categories (same as single-pass generation)
+## CONTENT EFFICIENCY RULES
+
+1. NO MINIMUM WORD COUNTS. A 2-sentence anti-pattern prompt that precisely targets a root cause is better than a 200-word prompt that lists symptoms. Write exactly as much as needed, no more.
+
+2. SPECIFICITY OVER LENGTH. "Never use negation-assertion prose structures to describe emotions" is more effective than 500 words explaining what bad prose looks like.
+
+3. TARGET ROOT CAUSES, NOT SYMPTOMS. Instead of banning 50 phrases, identify the 2-3 model behaviors that produce those phrases and address those behaviors directly.
+
+4. ONE PROMPT, ONE BEHAVIORAL CHANGE. Each prompt entry should change exactly one thing about how the model behaves. If removing a prompt wouldn't change the output, it shouldn't exist.
+
+5. USE MODEL KNOWLEDGE. You know how language models attend to instructions. Use positioning, framing, and phrasing that exploits how attention mechanisms work rather than relying on repetition and emphasis.
+
+6. STYLE THROUGH DEMONSTRATION. A 3-sentence example of the desired writing style can be more effective than 500 words of rules about the style. Show, don't just tell.
+
+7. COT EFFICIENCY. Every thinking step must produce reasoning that directly improves the output. No ceremonial steps. No "review all rules" steps (the model already has the rules in context). Focus thinking on decisions that require actual deliberation: character reactions, pacing choices, scene composition.
+
+## MANDATORY CATEGORIES
+
+Generate prompts organized into these functional categories. Generate AT MINIMUM one prompt per applicable category. Some categories may need 0 prompts if not relevant to the user's request.
 
 **CATEGORY 1: Foundation Prompts**
-- Main prompt summary: Role assignment, identity isolation, core narrative rules (100-300 words)
+- Main prompt summary: Role assignment, identity isolation, core narrative rules
+- Target: 100-300 words (can be shorter if effective)
 
 **CATEGORY 2: Character & Narrative Framework**
-- Plan 2-4 prompts: Character interaction rules, POV/perspective, character autonomy, narrative pacing
+- Plan 1-3 prompts: Character interaction rules, POV/perspective, character autonomy, narrative pacing
+- Only generate what's needed for the use case
 - Position BEFORE chatHistory
 
 **CATEGORY 3: Writing Style**
-- Plan 2-3 prompts:
-  * Writing Style (200-500 words): Substantial style guidance with specific techniques
-  * Anti-Cliché/Banned Patterns (50-150 words): Concrete examples of phrases/patterns to avoid
+- Plan 1-2 prompts:
+  * Writing Style: Specific, actionable style guidance (can be 50-300 words depending on complexity)
+  * Anti-Cliché/Banned Patterns: Only if needed - target root causes, not symptom lists
 - Position AFTER chatHistory for recency influence
 
 **CATEGORY 4: Guidelines (User-Editable)**
-- Plan 1 prompt: Clearly-labeled user-editable guidelines (100-200 words)
+- Plan 1 prompt: Clearly-labeled user-editable guidelines
+- Pre-populated with smart defaults based on user's description
 - Position AFTER chatHistory
 
 **CATEGORY 5: Chain of Thought (if requested)**
 - Only if user explicitly requests CoT/thinking/reasoning
-- Plan 2-3 prompts:
-  * CoT System Prompt (200-400 words): Structured thinking steps with word budgets
-  * CoT Prefill (10-30 words, role: "assistant"): Primes thinking flow
-  * CoT Language (20-50 words, if foreign-language thinking requested)
+- Plan 1-2 prompts:
+  * CoT System Prompt: Structured thinking steps focused on decisions that need deliberation
+  * CoT Prefill (role: "assistant"): Primes thinking flow (optional, only if targeting Claude)
+- NO "review all rules" steps - focus on character reactions, pacing, scene composition
 - Position AFTER chatHistory (injection_depth: 4)
 
 **CATEGORY 6: Output Control**
-- Plan 1-2 prompts: Word count/length control, response structure
+- Plan 0-2 prompts: Word count/length control, response structure
+- Only if the user's description requires specific output constraints
 - Position AFTER chatHistory
 
 **CATEGORY 7: Anti-Pattern Prompts**
-- Plan 2-4 prompts: Each prevents one specific problem (anti-omniscience, anti-repetition, anti-summarization, anti-rushing, anti-purple-prose, anti-talking-heads)
-- Each 30-80 words
+- Plan 1-3 prompts: Each prevents one specific ROOT CAUSE problem
+- Target the behavior that produces the symptom, not the symptom itself
+- Each prompt should be as short as effective (can be 20-100 words)
 - Position AFTER chatHistory
 
 **CATEGORY 8: NSFW/Adult Content (if applicable)**
 - Only if user's description indicates adult/NSFW content
-- Plan 1-3 prompts: NSFW guidelines, vocabulary, pacing
+- Plan 0-2 prompts: Only what's needed beyond the NSFW prompt field
 
 **CATEGORY 9: Format Examples (if needed)**
 - Only if user requests specific output formatting
-- Plan 1-2 prompts showing desired format
+- Plan 0-1 prompts showing desired format
 
 ### Positioning Strategy
 - Foundation, character setup, narrative rules → BEFORE chatHistory (or injection_depth: 0)
@@ -490,12 +535,26 @@ Based on the user's description complexity, plan for 15-40 prompt entries organi
 - Higher injection_depth = closer to recent messages = stronger influence
 - Jailbreak summary should describe critical enforcement (100-300 words)
 
-### Parameter Selection
-Choose parameters based on use case:
-- Creative Writing: temp 0.9-1.1, top_p 0.95-0.99, top_k 40-80, min_p 0.05-0.1
-- Roleplay: temp 0.8-1.0, top_p 0.9-0.95, top_k 40-60, min_p 0.08-0.12
-- NSFW: temp 1.0-1.2, top_p 0.95-0.99, top_k 60-100, min_p 0.05-0.08
-- Analytical: temp 0.6-0.8, top_p 0.85-0.92, top_k 30-50, min_p 0.1-0.15
+## PARAMETER DEFAULTS
+
+Use these defaults unless the user explicitly requests different sampling behavior:
+
+- temperature: 1 (neutral — never add randomness or flatten distribution)
+- top_p: 1 (disabled — do not restrict token pool)
+- top_k: 0 (disabled — do not restrict token pool)
+- min_p: 0 (disabled — do not filter tokens)
+- frequency_penalty: 0 (models handle repetition well natively; penalties produce stilted prose)
+- presence_penalty: 0 (same reason)
+- openai_max_tokens: 16000 (minimum floor — must accommodate CoT thinking overhead plus full response)
+- openai_max_context: 200000 (minimum floor — conversations truncate immediately with low values)
+
+These defaults match what every well-designed community preset uses (Izumi, Simulacra, etc.). Only deviate if the user explicitly requests different sampling behavior (e.g., "make it more creative" → temp 1.1, "make it more focused" → temp 0.9).
+
+## LANGUAGE RULE
+
+- The Main Prompt and Post-History Instructions must ALWAYS be in the output language (usually English).
+- Foreign-language thinking is a CoT-only technique. The CoT prompt and CoT prefill can use a different language for thinking, but all other prompts must be in the output language.
+- If the user requests foreign-language CoT, plan a dedicated CoT Language prompt that sets the thinking language. Do not make the entire preset bilingual.
 
 ## USER DESCRIPTION
 ${userDescription}
@@ -511,6 +570,14 @@ Generate the structural plan now. Return ONLY the JSON object.`;
  */
 export function buildPass2ContentPrompt(plan, userDescription) {
     return `You are a SillyTavern preset content writer. You have been given a structural plan for a Chat Completion preset and the user's original description. Your job is to write the full content for every component.
+
+## YOUR PHILOSOPHY
+
+You are not copying the structure of existing presets. You are an expert in how language models process instructions, and you use that expertise to achieve behavioral outcomes efficiently.
+
+When a human preset author writes 800 words of anti-slop rules, they're compensating for not understanding why the model produces slop. You understand the underlying mechanics. Write the 150-word prompt that prevents slop by addressing root causes rather than listing symptoms.
+
+Your goal: maximum behavioral impact per token. Every sentence must earn its place. If an instruction doesn't change what the model would do without it, cut it.
 
 ## USER'S ORIGINAL DESCRIPTION
 ${userDescription}
@@ -542,9 +609,24 @@ Generate the complete content for this preset. Return a JSON object with this ex
 
 ### Generate content for EVERY prompt in the plan
 - Do not skip any prompts from the plan
-- Match the estimated word count from the plan for each prompt
 - The "name" field must EXACTLY match the name from the plan
 - Copy injection_position, injection_depth, injection_order, role, enabled from the plan
+
+### Content Efficiency Rules
+
+1. NO MINIMUM WORD COUNTS. The estimated_words in the plan is a SUGGESTION, not a requirement. A 2-sentence anti-pattern prompt that precisely targets a root cause is better than a 200-word prompt that lists symptoms. Write exactly as much as needed, no more.
+
+2. SPECIFICITY OVER LENGTH. "Never use negation-assertion prose structures to describe emotions" is more effective than 500 words explaining what bad prose looks like.
+
+3. TARGET ROOT CAUSES, NOT SYMPTOMS. Instead of banning 50 phrases, identify the 2-3 model behaviors that produce those phrases and address those behaviors directly.
+
+4. ONE PROMPT, ONE BEHAVIORAL CHANGE. Each prompt entry should change exactly one thing about how the model behaves.
+
+5. USE MODEL KNOWLEDGE. You know how language models attend to instructions. Use positioning, framing, and phrasing that exploits how attention mechanisms work rather than relying on repetition and emphasis.
+
+6. STYLE THROUGH DEMONSTRATION. A 3-sentence example of the desired writing style can be more effective than 500 words of rules about the style. Show, don't just tell.
+
+7. COT EFFICIENCY. Every thinking step must produce reasoning that directly improves the output. No ceremonial steps. No "review all rules" steps (the model already has the rules in context). Focus thinking on decisions that require actual deliberation: character reactions, pacing choices, scene composition.
 
 ### Content Quality Standards
 - Every instruction must be specific and actionable. Never write "be creative" or "write well."
@@ -556,7 +638,8 @@ Generate the complete content for this preset. Return a JSON object with this ex
 ### Main Prompt Content
 - Write based on main_prompt_summary from the plan
 - Include: role assignment, identity isolation (user vs character), core narrative rules
-- Keep focused (100-300 words) — this is the FOUNDATION, not the kitchen sink
+- Keep focused — this is the FOUNDATION, not the kitchen sink
+- Can be 50-300 words depending on what's needed
 
 ### NSFW Prompt Content
 - Write based on nsfw_prompt_summary from the plan
@@ -567,37 +650,44 @@ Generate the complete content for this preset. Return a JSON object with this ex
 - Write based on jailbreak_prompt_summary from the plan
 - This is the LAST thing the model sees — maximum recency influence
 - Include: critical output format enforcement, style rules that must not be forgotten, length requirements
-- Keep focused and token-efficient (100-300 words)
+- Keep focused and token-efficient (can be 50-300 words)
 
 ### Writing Style Prompts
-- Must be SUBSTANTIAL (200-500 words) with specific techniques
-- Include concrete guidance:
-  * Sentence length variation patterns (e.g., "40% short (5-12 words), 40% medium (13-20 words), 20% long (21-30 words)")
-  * Paragraph structure expectations
-  * Vocabulary preferences and bans (concrete examples)
-  * Sensory detail density
-  * Dialogue formatting rules
-  * How internal thoughts are rendered
+- Be as concise as effective while remaining specific
+- Include concrete guidance where it matters:
+  * Sentence length variation patterns (if relevant to the style)
+  * Vocabulary preferences and bans (concrete examples of what matters)
+  * Sensory detail density (if relevant)
+  * Dialogue formatting rules (if relevant)
+- Show examples of the desired style when possible
+- Can be 50-400 words depending on style complexity
 
 ### Anti-Cliché Prompts
-- List concrete examples of banned phrases/patterns
-- Examples: "shivers down spine", "eyes widening in shock", "a mixture of X and Y", "heart racing", "breath hitching"
-- Include overused metaphors, purple prose patterns
+- Target the ROOT CAUSE behavior that produces clichés
+- Instead of listing 50 banned phrases, identify the 2-3 patterns that generate them
+- Example: "Avoid emotion-through-physical-reaction patterns (heart racing, breath hitching, shivers down spine)" is better than listing 30 individual phrases
+- Can be 20-150 words
 
 ### Chain of Thought Prompts
-- CoT System Prompt: Structured thinking steps with word budgets per step
-  * Review current situation (time, place, character states)
-  * Analyze user's latest input and intent
-  * Check character personality against planned response
-  * Plan pacing and scene progression
-  * Review style and writing rules
-  * Transition to output
+- CoT System Prompt: Structured thinking steps focused on decisions that need deliberation
+  * Character reactions to the situation
+  * Pacing choices for this moment
+  * Scene composition decisions
+  * NO "review all rules" steps
+  * NO ceremonial steps
 - CoT Prefill (role: "assistant"): Short priming text like "<think>\\nLet me carefully consider this situation."
 - Wrap thinking in <think></think> or <thinking></thinking> tags
-- NEVER include "list all rules you might violate" — counterproductive priming
+- Can be 100-400 words depending on complexity
 
 ### Anti-Pattern Prompts
-- Each should be SHORT (30-80 words) and focused on ONE specific problem
+- Each should target ONE specific ROOT CAUSE problem
+- Be as short as effective (can be 20-100 words)
+- Examples:
+  * "Characters only know what they would realistically know. No telepathy." (anti-omniscience)
+  * "Don't recap what just happened. Move forward." (anti-summarization)
+  * "Let scenes breathe. Don't skip important moments." (anti-rushing)
+
+Return ONLY the JSON object. No markdown fences, no commentary.`;
 - Examples:
   * Anti-Omniscience: Characters only know what they would realistically know
   * Anti-Repetition: Avoid repeating sentence structures, phrases, story beats
@@ -631,6 +721,10 @@ Return ONLY the JSON object. No markdown fences, no commentary, no explanation.`
 export function buildPass2BatchPrompt(plan, promptBatch, userDescription, batchIndex, totalBatches) {
     return `You are a SillyTavern preset content writer. You are generating content for batch ${batchIndex} of ${totalBatches}.
 
+## YOUR PHILOSOPHY
+
+Maximum behavioral impact per token. Every sentence must earn its place. Target root causes, not symptoms. A 2-sentence prompt that precisely addresses a behavior is better than a 200-word prompt that lists symptoms.
+
 ## USER'S ORIGINAL DESCRIPTION
 ${userDescription}
 
@@ -657,12 +751,13 @@ Generate ONLY the content for the prompts listed in "PROMPTS TO GENERATE IN THIS
 
 ## CRITICAL RULES
 - Generate content for EVERY prompt in the batch
-- Match the estimated word count from the plan
 - The "name" field must EXACTLY match the name from the batch
 - Follow all content quality standards from the full plan
 - Use SillyTavern macros: char, user, lastUserMessage, personality, scenario, description, persona (wrapped in double braces)
 - Every instruction must be specific and actionable
 - Wrap meta-comments in double-brace-slash-slash comment syntax with the trim macro
+- NO MINIMUM WORD COUNTS: estimated_words is a suggestion, not a requirement. Write exactly as much as needed.
+- Target root causes, not symptoms. Instead of listing 50 banned phrases, identify the 2-3 behaviors that produce them.
 
 Return ONLY the JSON array. No markdown fences, no commentary.`;
 }
